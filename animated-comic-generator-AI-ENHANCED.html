@@ -33,32 +33,32 @@
         .speech-bubble {
             position: relative;
             background: white;
-            border: 2px solid black;
-            border-radius: 10px;
-            padding: 15px;
-            box-shadow: 3px 3px 0 rgba(0,0,0,0.1);
+            border: 3px solid #9333ea;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1), 0 0 0 3px rgba(147, 51, 234, 0.1);
         }
         .speech-bubble:after {
             content: '';
             position: absolute;
-            bottom: -10px;
-            left: 20px;
+            bottom: -15px;
+            left: 30px;
             width: 0;
             height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-top: 10px solid black;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 15px solid #9333ea;
         }
         .speech-bubble:before {
             content: '';
             position: absolute;
-            bottom: -8px;
-            left: 21px;
+            bottom: -12px;
+            left: 32px;
             width: 0;
             height: 0;
-            border-left: 9px solid transparent;
-            border-right: 9px solid transparent;
-            border-top: 9px solid white;
+            border-left: 13px solid transparent;
+            border-right: 13px solid transparent;
+            border-top: 13px solid white;
             z-index: 1;
         }
         .loading-spinner {
@@ -201,12 +201,29 @@
             return data.data[0].imageURL;
         };
 
-        const generateStoryBeats = async (characterDescription, characterName, previousContext, apiKey) => {
+        const generateStoryBeats = async (characterDescription, characterName, previousContext, storyMemory, apiKey) => {
             console.log("📝 Generating story with GPT-4...");
             
-            const contextPrompt = previousContext.length > 0 
-                ? `Previous story: ${previousContext.join(' → ')}\n\nContinue the adventure.`
-                : 'Start a magical adventure!';
+            const isFirstScene = previousContext.length === 0;
+            
+            let contextPrompt = '';
+            if (isFirstScene) {
+                contextPrompt = 'Start a magical adventure! Introduce the setting and an initial goal.';
+            } else {
+                // Build rich context from memory
+                const memoryContext = [];
+                if (storyMemory.location) memoryContext.push(`Currently at: ${storyMemory.location}`);
+                if (storyMemory.goal) memoryContext.push(`Current goal: ${storyMemory.goal}`);
+                if (storyMemory.characters.length > 0) memoryContext.push(`Characters met: ${storyMemory.characters.join(', ')}`);
+                if (storyMemory.events.length > 0) memoryContext.push(`Recent events: ${storyMemory.events.slice(-3).join(' → ')}`);
+                
+                contextPrompt = `STORY CONTEXT:
+${memoryContext.join('\n')}
+
+PLAYER'S CHOICE: "${previousContext[previousContext.length - 1]}"
+
+Continue the story based on this choice. Keep narrative consistency!`;
+            }
             
             const response = await fetch("https://api.openai.com/v1/chat/completions", {
                 method: "POST",
@@ -218,58 +235,106 @@
                     model: "gpt-4o",
                     messages: [{
                         role: "system",
-                        content: `You create magical adventure stories for children (ages 6-12). 
+                        content: `You create magical adventure stories for children (ages 6-12) in an interactive storybook format.
 
-CRITICAL: We are ANIMATING a child's STATIC drawing. The drawing cannot change poses or transform.
+CRITICAL ANIMATION RULES:
+- We are animating a STATIC drawing that CANNOT change poses or transform
+- Scene descriptions must focus on ENVIRONMENT and ATMOSPHERE only
+- Provide DETAILED but FOCUSED descriptions (20-30 words ideal)
+- Include specific visual details: colors, lighting, objects, weather, atmosphere
 
-Scene descriptions should focus on:
-- WHERE the character is (environment, setting)
-- WHAT'S AROUND THEM (magical elements, atmosphere, weather)
-- MOOD and AMBIANCE (mysterious, cheerful, exciting)
+STORY CONSISTENCY:
+- Remember all characters introduced previously
+- Follow the narrative thread from player's choices
+- Introduce NEW characters naturally (friends, magical creatures, helpers)
+- When introducing NEW characters, give them dialogue that introduces themselves or helps the story
+- Build on previous events and locations
+- Maintain continuity of the adventure
 
-DO NOT describe:
-- Character actions (jumping, running, flying) - the drawing is static!
-- Character transformations - the drawing stays the same!
-- Complex movements - just gentle breathing/idle animation possible
+For each scene, provide:
+1. NARRATOR TEXT: Beautiful prose (2-3 sentences, children's book style)
+2. CHARACTER DIALOGUE: What ${characterName} says (enthusiastic, age-appropriate)
+3. NEW CHARACTER DIALOGUE: If a new character appears, what they say (friendly, helpful, engaging)
+4. SCENE DESCRIPTION: Detailed ENVIRONMENT description (20-30 words, vivid but focused)
+5. STORY METADATA: Update story memory (location, characters, events, goal)
+
+Scene description examples (BALANCED DETAIL):
+✅ "enchanted forest with towering ancient trees, glowing purple mushrooms, golden fireflies dancing in misty air, soft rainbow light filtering through leaves"
+✅ "crystal cave with shimmering blue walls, sparkling stalactites, pools of glowing water reflecting rainbow lights, magical gems embedded in rocks"
+✅ "sunny meadow filled with colorful wildflowers, butterflies with glittering wings, white puffy clouds in bright blue sky, gentle breeze"
+✅ "mystical mountain peak with swirling silver clouds, floating islands nearby, cascading waterfalls of stardust, pink and orange sunset sky"
+
+❌ "magical forest" (too simple, no visual details, background won't render properly)
+❌ "jumping over a rainbow" (character action, not environment)
+❌ "running through enchanted forest with ancient trees covered in glowing moss while collecting magical crystals and meeting fairy friends who guide the way to a hidden treasure chest beneath sparkling waterfalls" (too long, includes actions)
 
 Return ONLY valid JSON:
 {
   "scenes": [
     {
-      "description": "Environment and atmosphere (NOT character actions)",
-      "dialogue": "What ${characterName} says"
+      "narrator": "Story text (2-3 sentences)",
+      "dialogue": "What ${characterName} says!",
+      "newCharacterDialogue": "What new character says (if introduced), or null",
+      "sceneDescription": "Detailed environment (20-30 words, vivid visual details)"
     }
   ],
-  "choices": ["Choice 1 ✨", "Choice 2 🌟", "Choice 3 💫"]
+  "choices": ["Choice 1 ✨", "Choice 2 🌟", "Choice 3 💫"],
+  "storyUpdate": {
+    "location": "current location name",
+    "newCharacter": "name of new character if introduced, or null",
+    "newCharacterDescription": "brief appearance description if new character introduced, or null",
+    "event": "what just happened (brief)",
+    "goal": "current objective"
+  }
 }`
                     }, {
                         role: "user",
-                        content: `Create 3 sequential scenes for ${characterName}'s adventure.
+                        content: `Create the next scene for ${characterName}'s adventure.
 
 ${contextPrompt}
 
-Each scene description should focus on ENVIRONMENT and ATMOSPHERE:
+Requirements:
+1. NARRATOR: Engaging children's book prose (2-3 sentences)
+2. DIALOGUE: What ${characterName} says (excited/curious/brave)
+3. NEW CHARACTER DIALOGUE: If introducing a new character, give them dialogue (friendly greeting or helpful comment)
+4. SCENE DESCRIPTION: Detailed ENVIRONMENT with vivid visual details (20-30 words)
+   - Include: colors, lighting, specific objects, weather, atmosphere
+   - Focus on: what's visible in the background and surroundings
+   - Avoid: character actions or movements
+5. STORY UPDATE: Update location, introduce new character with description if appropriate, record event, update goal
+6. CHOICES: 3 meaningful options that advance the story
 
-✅ GOOD examples (environment/atmosphere):
-"in a magical glowing forest with sparkles floating around"
-"discovering a treasure chest in a sunny cave with beams of light"
-"surrounded by cotton candy clouds at sunset"
-"standing at the edge of a cliff overlooking a rainbow valley"
+SCENE DESCRIPTION MUST INCLUDE:
+- Specific colors (golden, emerald, crystal blue, etc.)
+- Lighting/atmosphere (glowing, shimmering, misty, sunny, etc.)
+- Environmental objects (trees, rocks, flowers, clouds, water, etc.)
+- Mood elements (magical, peaceful, mysterious, exciting, etc.)
 
-❌ BAD examples (actions we can't animate):
-"jumping excitedly with arms raised" - Can't change the drawing's pose!
-"running through the field" - The drawing is static!
-"transforming into a superhero" - Can't transform the drawing!
-"dancing and spinning around" - Too much movement!
+Examples:
+✅ "ancient forest with towering oak trees covered in glowing moss, golden fireflies floating through purple mist, soft moonlight breaking through branches"
+✅ "crystal cave with walls of sparkling blue ice, stalactites dripping rainbow water into glowing pools, magical gems reflecting prismatic light"
+✅ "mountain meadow filled with wildflowers in every color, butterflies with translucent wings, white clouds drifting across bright azure sky"
 
-Keep scenes SIMPLE and focused on WHERE they are, not WHAT they're doing.
-The drawing will have gentle breathing/idle animation only.
+${isFirstScene ? `
+This is the FIRST scene, so:
+- Set up the initial magical setting with RICH VISUAL DETAILS
+- Describe the environment vividly so it renders properly
+- Introduce a clear goal or mystery
+- Make it exciting and inviting
+` : `
+This is a CONTINUATION, so:
+- Build directly from the player's choice
+- Maintain consistency with previous events
+- If introducing a NEW CHARACTER, give them dialogue that introduces themselves or offers help
+- Describe the NEW LOCATION with rich visual details (if location changed)
+- Keep the adventure progressing with clear environmental context
+`}
 
 Generate the story now!`
                     }],
                     response_format: { type: "json_object" },
                     temperature: 0.8,
-                    max_tokens: 1000
+                    max_tokens: 1500
                 })
             });
             
@@ -497,7 +562,7 @@ Generate the story now!`
         
         const App = () => {
             const [apiKeys, setApiKeys] = useState({ 
-                openai: ,
+                openai: , 
                 runware: 
             });
             const [characterImage, setCharacterImage] = useState(null);
@@ -511,6 +576,12 @@ Generate the story now!`
             const [loadingMessage, setLoadingMessage] = useState('');
             const [characterData, setCharacterData] = useState(null);
             const [storyContext, setStoryContext] = useState([]);
+            const [storyMemory, setStoryMemory] = useState({
+                characters: [],  // Track all characters introduced
+                events: [],      // Major story events
+                location: '',    // Current location
+                goal: ''         // Current objective
+            });
 
             const showToast = (message, type = 'info') => {
                 setToast({ message, type });
@@ -559,14 +630,35 @@ Generate the story now!`
                     };
                     setCharacterData(charData);
                     
-                    // Generate initial story (focus on ACTION, not character appearance)
+                    // Initialize story memory
+                    const initialMemory = {
+                        characters: [testCharacterName],
+                        events: [],
+                        location: '',
+                        goal: ''
+                    };
+                    
+                    // Generate initial story
                     setLoadingMessage('📖 Creating your adventure story...');
                     const story = await generateStoryBeats(
                         characterDescription || defaultDescription,
                         testCharacterName,
                         [],
+                        initialMemory,
                         apiKeys.openai
                     );
+                    
+                    // Update story memory with first scene
+                    const updatedMemory = {
+                        characters: [testCharacterName],
+                        events: [story.storyUpdate?.event || 'Adventure begins'],
+                        location: story.storyUpdate?.location || 'Unknown land',
+                        goal: story.storyUpdate?.goal || 'Explore the world'
+                    };
+                    if (story.storyUpdate?.newCharacter) {
+                        updatedMemory.characters.push(story.storyUpdate.newCharacter);
+                    }
+                    setStoryMemory(updatedMemory);
                     
                     // Generate animated video frame
                     const scene = story.scenes[0];
@@ -574,7 +666,7 @@ Generate the story now!`
                     setLoadingMessage(`🎬 Animating scene 1/1 (${mode}, ~30-60 seconds)...`);
                     
                     const frameVideo = await generateAnimatedFrame(
-                        scene.description,  // What HAPPENS in the scene
+                        scene.sceneDescription || scene.description,  // Use sceneDescription for animation
                         characterUUID,      // Character UUID (or null for text mode)
                         apiKeys.runware
                     );
@@ -582,8 +674,11 @@ Generate the story now!`
                     const generatedFrames = [{
                         id: '1',
                         videoUrl: frameVideo,
-                        description: scene.description,
-                        dialogue: scene.dialogue,
+                        narrator: scene.narrator || '',
+                        dialogue: scene.dialogue || '',
+                        newCharacterDialogue: scene.newCharacterDialogue || null,
+                        newCharacterName: story.storyUpdate?.newCharacter || null,
+                        sceneDescription: scene.sceneDescription || scene.description,
                         animation: "fadeIn"
                     }];
                     
@@ -604,27 +699,62 @@ Generate the story now!`
             const handleChoiceClick = async (choiceText) => {
                 if (loading || !characterData) return;
 
+                console.log(`🎯 Player chose: "${choiceText}"`);
                 setLoading(true);
                 const newContext = [...storyContext, choiceText];
                 setStoryContext(newContext);
 
                 try {
-                    // Generate next story beat (focus on ACTION)
+                    // Generate next story beat with memory context
                     setLoadingMessage('📖 Continuing your adventure...');
                     const story = await generateStoryBeats(
-                        '',  // Don't need character description
+                        '',  // Don't need character description for continuation
                         characterData.name,
                         newContext,
+                        storyMemory,  // Pass current story memory
                         apiKeys.openai
                     );
 
+                    // Update story memory with new information
+                    const updatedMemory = { ...storyMemory };
+                    if (story.storyUpdate) {
+                        if (story.storyUpdate.location) {
+                            updatedMemory.location = story.storyUpdate.location;
+                        }
+                        if (story.storyUpdate.event) {
+                            updatedMemory.events = [...updatedMemory.events, story.storyUpdate.event];
+                        }
+                        if (story.storyUpdate.goal) {
+                            updatedMemory.goal = story.storyUpdate.goal;
+                        }
+                        if (story.storyUpdate.newCharacter && !updatedMemory.characters.includes(story.storyUpdate.newCharacter)) {
+                            updatedMemory.characters = [...updatedMemory.characters, story.storyUpdate.newCharacter];
+                            const charDesc = story.storyUpdate.newCharacterDescription || '';
+                            console.log(`✨ New character introduced: ${story.storyUpdate.newCharacter}${charDesc ? ` (${charDesc})` : ''}`);
+                        }
+                    }
+                    setStoryMemory(updatedMemory);
+                    
+                    console.log("📚 Story memory updated:", updatedMemory);
+
                     // Generate new video with SAME character
                     const scene = story.scenes[0];
+                    if (!scene) {
+                        throw new Error("No scene data returned from story generation");
+                    }
+                    
                     const mode = characterData.useImageMode ? 'image-to-video' : 'text-to-video';
                     setLoadingMessage(`🎬 Animating new scene (${mode}, ~30-60 seconds)...`);
                     
+                    const sceneDesc = scene.sceneDescription || scene.description;
+                    if (!sceneDesc) {
+                        throw new Error("No scene description available for animation");
+                    }
+                    
+                    console.log(`🎬 Animating scene: "${sceneDesc}"`);
+                    
                     const frameVideo = await generateAnimatedFrame(
-                        scene.description,        // What happens
+                        sceneDesc,
                         characterData.characterUUID,  // SAME character UUID (or null)
                         apiKeys.runware
                     );
@@ -632,13 +762,36 @@ Generate the story now!`
                     const newFrame = {
                         id: `${Date.now()}`,
                         videoUrl: frameVideo,
-                        description: scene.description,
-                        dialogue: scene.dialogue,
+                        narrator: scene.narrator || '',
+                        dialogue: scene.dialogue || '',
+                        newCharacterDialogue: scene.newCharacterDialogue || null,
+                        newCharacterName: story.storyUpdate?.newCharacter || null,
+                        sceneDescription: sceneDesc,
                         animation: "fadeIn"
                     };
 
-                    setFrames([...frames, newFrame]);  // Add to existing frames
-                    setChoices(story.choices.map((choice, idx) => ({ id: `c${Date.now()}-${idx}`, text: choice })));
+                    console.log("✅ New frame created:", newFrame);
+                    
+                    // Log new character dialogue if present
+                    if (scene.newCharacterDialogue) {
+                        console.log(`💬 New character speaks: "${scene.newCharacterDialogue}"`);
+                    }
+
+                    // Update frames and choices
+                    setFrames(prevFrames => [...prevFrames, newFrame]);
+                    
+                    if (story.choices && story.choices.length > 0) {
+                        const newChoices = story.choices.map((choice, idx) => ({ 
+                            id: `c${Date.now()}-${idx}`, 
+                            text: choice 
+                        }));
+                        setChoices(newChoices);
+                        console.log("✅ New choices set:", newChoices);
+                    } else {
+                        console.warn("⚠️ No choices returned from story generation");
+                        setChoices([]);
+                    }
+                    
                     showToast('✨ New scene added!', 'success');
 
                 } catch (error) {
@@ -847,54 +1000,161 @@ Generate the story now!`
                                     </div>
                                 )}
 
-                                {/* Comic Frames */}
-                                <div className={`grid ${frames.length === 1 ? 'grid-cols-1 max-w-3xl mx-auto' : 'md:grid-cols-3'} gap-6`}>
+                                {/* Story Memory Panel */}
+                                {frames.length > 0 && storyMemory.location && (
+                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 border-2 border-blue-200 shadow-lg">
+                                        <h3 className="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
+                                            📖 Your Adventure So Far
+                                        </h3>
+                                        <div className="grid md:grid-cols-2 gap-4 text-sm">
+                                            <div className="bg-white/70 rounded-lg p-3">
+                                                <span className="font-semibold text-purple-700">📍 Location:</span>
+                                                <span className="ml-2 text-gray-800">{storyMemory.location}</span>
+                                            </div>
+                                            <div className="bg-white/70 rounded-lg p-3">
+                                                <span className="font-semibold text-purple-700">🎯 Goal:</span>
+                                                <span className="ml-2 text-gray-800">{storyMemory.goal}</span>
+                                            </div>
+                                            {storyMemory.characters.length > 1 && (
+                                                <div className="bg-white/70 rounded-lg p-3">
+                                                    <span className="font-semibold text-purple-700">👥 Characters:</span>
+                                                    <span className="ml-2 text-gray-800">{storyMemory.characters.join(', ')}</span>
+                                                </div>
+                                            )}
+                                            {storyMemory.events.length > 0 && (
+                                                <div className="bg-white/70 rounded-lg p-3">
+                                                    <span className="font-semibold text-purple-700">✨ Recent:</span>
+                                                    <span className="ml-2 text-gray-800">{storyMemory.events[storyMemory.events.length - 1]}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Story Frames - Storybook Style */}
+                                <div className="space-y-8">
                                     {frames.map((frame, index) => (
                                         <div
                                             key={frame.id}
-                                            className={`bg-white rounded-xl shadow-lg overflow-hidden comic-frame-${frame.animation}`}
+                                            className={`bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 rounded-2xl shadow-2xl overflow-hidden border-4 border-amber-200 comic-frame-${frame.animation}`}
                                             style={{ animationDelay: `${index * 0.2}s` }}
                                         >
-                                            <div className="relative">
-                                                <video
-                                                    src={frame.videoUrl}
-                                                    autoPlay
-                                                    loop
-                                                    muted
-                                                    playsInline
-                                                    className={`w-full ${frames.length === 1 ? 'h-auto aspect-square' : 'h-64'} object-cover`}
-                                                    onLoadedData={() => console.log(`Video ${index + 1} loaded`)}
-                                                >
-                                                    Your browser doesn't support video playback.
-                                                </video>
-                                                <div className="absolute top-4 right-4 bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-bold">
-                                                    #{index + 1}
-                                                </div>
+                                            {/* Page Number Badge */}
+                                            <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 text-center">
+                                                <span className="text-sm font-bold tracking-wider">✨ SCENE {index + 1} ✨</span>
                                             </div>
-                                            <div className="p-4">
-                                                <div className="speech-bubble mb-2">
-                                                    <p className="text-gray-900 font-medium">{frame.dialogue}</p>
+
+                                            <div className="grid md:grid-cols-2 gap-6 p-6">
+                                                {/* Video Section */}
+                                                <div className="relative">
+                                                    <div className="rounded-xl overflow-hidden shadow-xl border-4 border-white">
+                                                        <video
+                                                            src={frame.videoUrl}
+                                                            autoPlay
+                                                            loop
+                                                            muted
+                                                            playsInline
+                                                            className="w-full aspect-square object-cover"
+                                                            onLoadedData={() => console.log(`Video ${index + 1} loaded`)}
+                                                        >
+                                                            Your browser doesn't support video playback.
+                                                        </video>
+                                                    </div>
+                                                    {/* Decorative corners */}
+                                                    <div className="absolute -top-2 -left-2 text-4xl">📖</div>
+                                                    <div className="absolute -top-2 -right-2 text-4xl">✨</div>
+                                                    <div className="absolute -bottom-2 -left-2 text-4xl">🌟</div>
+                                                    <div className="absolute -bottom-2 -right-2 text-4xl">💫</div>
                                                 </div>
-                                                <p className="text-sm text-gray-600 italic">{frame.description}</p>
+
+                                                {/* Story Text Section */}
+                                                <div className="flex flex-col justify-center space-y-4">
+                                                    {/* Narrator Text */}
+                                                    {frame.narrator && (
+                                                        <div className="bg-white/80 backdrop-blur-sm rounded-xl p-5 shadow-lg border-2 border-amber-300">
+                                                            <div className="flex items-start gap-3">
+                                                                <span className="text-3xl flex-shrink-0">📚</span>
+                                                                <p className="text-gray-800 leading-relaxed font-serif text-lg italic">
+                                                                    {frame.narrator}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Character Dialogue */}
+                                                    <div className="speech-bubble bg-gradient-to-br from-purple-100 to-pink-100 border-purple-300">
+                                                        <div className="flex items-start gap-3">
+                                                            <span className="text-2xl flex-shrink-0">💬</span>
+                                                            <p className="text-gray-900 font-bold text-lg leading-relaxed">
+                                                                "{frame.dialogue}"
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* New Character Dialogue */}
+                                                    {frame.newCharacterDialogue && (
+                                                        <div className="speech-bubble bg-gradient-to-br from-emerald-100 to-teal-100 border-emerald-300">
+                                                            <div className="flex items-start gap-3">
+                                                                <span className="text-2xl flex-shrink-0">✨</span>
+                                                                <div>
+                                                                    {frame.newCharacterName && (
+                                                                        <p className="text-emerald-700 font-bold text-sm mb-1">
+                                                                            {frame.newCharacterName}
+                                                                        </p>
+                                                                    )}
+                                                                    <p className="text-gray-900 font-bold text-lg leading-relaxed">
+                                                                        "{frame.newCharacterDialogue}"
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
 
-                                {/* Choices */}
+                                {/* Choices - Storybook Style */}
                                 {!loading && choices.length > 0 && (
-                                    <div className="bg-white rounded-xl shadow-xl p-6">
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4">
-                                            What happens next?
-                                        </h3>
+                                    <div className="bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 rounded-2xl shadow-2xl p-8 border-4 border-purple-200">
+                                        <div className="text-center mb-6">
+                                            <h3 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-2">
+                                                ✨ What Happens Next? ✨
+                                            </h3>
+                                            <p className="text-gray-600 text-lg font-serif italic">
+                                                Choose your adventure...
+                                            </p>
+                                        </div>
                                         <div className="grid md:grid-cols-3 gap-4">
-                                            {choices.map((choice) => (
+                                            {choices.map((choice, idx) => (
                                                 <button
                                                     key={choice.id}
                                                     onClick={() => handleChoiceClick(choice.text)}
-                                                    className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg hover:border-purple-500 hover:shadow-lg transition-all text-left"
+                                                    className="group relative p-6 bg-white rounded-xl border-3 border-purple-300 hover:border-purple-500 hover:shadow-2xl transition-all transform hover:scale-105 text-left overflow-hidden"
                                                 >
-                                                    <span className="text-gray-900 font-medium">{choice.text}</span>
+                                                    {/* Decorative background */}
+                                                    <div className="absolute inset-0 bg-gradient-to-br from-purple-100/50 to-pink-100/50 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                                    
+                                                    {/* Choice number badge */}
+                                                    <div className="absolute top-2 right-2 w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-lg">
+                                                        {idx + 1}
+                                                    </div>
+                                                    
+                                                    {/* Choice text */}
+                                                    <div className="relative">
+                                                        <div className="text-2xl mb-2">
+                                                            {['🌟', '✨', '💫'][idx % 3]}
+                                                        </div>
+                                                        <p className="text-gray-900 font-bold text-lg leading-relaxed">
+                                                            {choice.text}
+                                                        </p>
+                                                    </div>
+                                                    
+                                                    {/* Hover arrow */}
+                                                    <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span className="text-purple-600 text-xl">→</span>
+                                                    </div>
                                                 </button>
                                             ))}
                                         </div>
